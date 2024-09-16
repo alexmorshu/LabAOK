@@ -44,7 +44,7 @@ public:
 
 	BigNum(const BigNum& other) : BigNum(new number[other.capacity_], other.capacity_)
 	{
-		std::memcpy(this->arr_, other.arr_, other.capacity_*sizeof(std::uint16_t)); //copy
+		std::memcpy(this->arr_, other.arr_, other.capacity_*sizeof(number)); //copy
 	}
 
 	BigNum& operator=(const BigNum& other)
@@ -52,7 +52,7 @@ public:
 		this->~BigNum();//destroy old
 
 		number* newArr = new number[other.capacity_]; //allocate memomy
-		std::memcpy(newArr, other.arr_, other.capacity_ * sizeof(std::uint16_t)); //copy
+		std::memcpy(newArr, other.arr_, other.capacity_ * sizeof(number)); //copy
 		this->arr_ = newArr; //set new arr
 		return *this;
 	}
@@ -66,12 +66,10 @@ public:
 
 	BigNum& operator-=(const BigNum& other)
 	{
+		if(*this < other)
+			throw std::runtime_error("This object is less than other");
 		const number count = other.size();
 		const number thisCount = this->size(); 
-		if(count > thisCount)
-			throw std::runtime_error("This object is less than other");
-
-
 	 	number* thisBuf = this->pointerToArr_();
 	       	const number* otherBuf = other.pointerToArr_();	
 		bool sign = false;
@@ -89,11 +87,10 @@ public:
 
 			*(thisBuf + i) = thisValue;
 		}
-		if(sign && (count == thisCount))
-			throw std::runtime_error("This object is less than other");
-
-		*(thisBuf+count)-=(sign)?(1):(0);
-
+		if(sign)
+		{
+			*(thisBuf+count) -= 1;
+		}
 		for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == 0); i--)
 		{
 			this->counter_()--;
@@ -272,24 +269,20 @@ private:
 		}
 		return result;
 	}
+
 	
 private:
 	number* arr_;
 	std::size_t capacity_;
 };
 
- 
+BigNum<> operator ""_BN(const char* str)
+{
+	return BigNum(str);
+}	
 
 int main()
 {
-	BigNum A("99994242423131331394444424242424244");
-	BigNum B("14242424244242433424262476264672864");
-	BigNum C = B - A;
-	A.debug();
-	std::cout << std::endl;
-	B.debug();
-	std::cout << std::endl;
-	C.debug();
-	std::cout << std::endl;
-	std::cout << (A != A) << std::endl;
-}
+	BigNum A = 99994242423131331394444424242424244_BN;
+	BigNum B = 14242424244242433424262476264672864_BN;
+	BigNum C = A - B;
