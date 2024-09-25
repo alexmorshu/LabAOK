@@ -4,6 +4,8 @@
 #include <memory>
 #include <cstring>
 #include <exception>
+#include <cmath>
+
 template<std::size_t N = 4>
 class BigNum
 {
@@ -11,9 +13,14 @@ class BigNum
 public:
 	BigNum(const std::string& str): BigNum(new number[str.size()/N + 2]{}, str.size()/N + 2)
 	{
+		short minus = 0;
+		if(str[0] == '-')
+		{
+			minus = 1;
+		}
 		number* buf = this->pointerToArr_();
 		std::size_t position = 0;
-		for(auto i = str.rbegin(); i != str.rend(); i++, position++)
+		for(auto i = str.rbegin(); (i != str.rend()) && (*i != '-') ; i++, position++)
 		{
 			std::size_t index = position/N;
 			std::size_t num = position%N;
@@ -33,6 +40,8 @@ public:
 			index++;
 		}
 		this->counter_() = index;
+		if(minus == 1)
+			this->invert();
 	}
 
 
@@ -57,52 +66,108 @@ public:
 		return *this;
 	}
 
-	BigNum operator-(const BigNum& other) const
-	{
-		BigNum newNum (*this);
-		newNum-=other;
-		return newNum;
-	}
-
-	BigNum& operator-=(const BigNum& other)
-	{
-		if(*this < other)
-			throw std::runtime_error("This object is less than other");
-		const number count = other.size();
-		const number thisCount = this->size(); 
-	 	number* thisBuf = this->pointerToArr_();
-	       	const number* otherBuf = other.pointerToArr_();	
-		bool sign = false;
-		for(number i = 0; i < count; i++)
-		{
-			number thisValue = *(thisBuf+i);
-			const number otherValue = *(otherBuf+i);
-			thisValue -= (sign)?(1):(0);
-			sign = thisValue < otherValue;
-
-			if(sign)
-				thisValue = BigNum::pow(N) + thisValue - otherValue;
-			else
-				thisValue = thisValue - otherValue;
-
-			*(thisBuf + i) = thisValue;
-		}
-		if(sign)
-		{
-			*(thisBuf+count) -= 1;
-		}
-		for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == 0); i--)
-		{
-			this->counter_()--;
-		}
-		return *this;
-	}
 
 	BigNum operator+(const BigNum& other) const
 	{
 		BigNum newNum (*this);
 		newNum+=other;
 		return newNum;
+	}
+
+	BigNum& add(std::uintmax_t num, bool otherSign)
+	{
+		if(otherSign)
+		{
+			if(num == 0)
+				return *this;
+			num--;
+		}
+		number thisSize = this->size();
+                number thisCapacity = this->capacity_;
+                number* thisBuf = this->pointerToArr_();
+		bool thisSign = this->sign;
+		std::size_t otherSize = (sizeof(std::uintmax_t))/N; 
+		if(otherSize >= thisCapacity)
+		{
+			this->reallocate(otherSize + 1);
+			thisBuf = this->pointerToArr_();
+		}
+		for(;thisSize < otherSize; thisSize++)
+		{
+			*(thisBuf + thisSize) = ((thisSign)?(BigNum::pow(N) - 1):(0) );
+		}
+		bool sign = false;
+                for(number i = 0; i < thisSize; i++)
+                {
+                        number thisValue = *(thisBuf+i);
+                        number otherValue = (num%BigNum::pow(N));
+			if(otherSign)
+				otherValue = (BigNum::pow(N)) - otherValue - 1;
+			num/=BigNum::pow(N);
+                        thisValue+=otherValue;
+                        thisValue+=(sign)?(1):(0);
+                        sign = thisValue >= BigNum::pow(N);
+                        if(sign)
+                        {
+                                thisValue -= BigNum::pow(N);
+                        }
+                        *(thisBuf+i) = thisValue;
+                }
+		bool isOverflow = (thisSign && otherSign && !sign) ||
+                                  (!thisSign && !otherSign && sign);
+
+                bool nowSign = (thisSign && (otherSign || !sign)) || (otherSign && !sign);
+
+                if(isOverflow)
+                {
+                        *(thisBuf+thisSize) = (thisSign)?(BigNum::pow(N)-2):(1);
+                        thisSize++;
+                }
+                this->counter_() = thisSize;
+                this->sign = nowSign;
+
+		number g = (this->sign)?(BigNum::pow(N)-1):(0);
+                for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == g); i--)
+                {
+                        this->counter_()--;
+                }
+                return *this;
+	}
+	BigNum& operator+=(std::uintmax_t num)
+	{
+		return this->add(num, false);
+	}
+	BigNum& operator-=(std::uintmax_t num)
+	{
+		return this->add(num, true);
+	}
+	
+	BigNum operator +(std::uintmax_t num) const
+	{
+		BigNum C (*this);
+		C+=num;
+		return C;
+	}
+
+	BigNum operator -(std::uintmax_t num) const
+	{
+		BigNum C (*this);
+		C-=num;
+		return C;
+	}
+
+	BigNum& operator-=(const BigNum& other)
+	{
+		this->invert();
+		*this+=other;
+		this->invert();
+		return *this;
+	}
+	BigNum operator-(const BigNum& other)
+	{
+		BigNum C (*this);
+		C-=other;
+		return C;	
 	}
 
 	BigNum& operator+=(const BigNum& other)
@@ -112,15 +177,24 @@ public:
 		number thisCapacity = this->capacity_;
 		number* thisBuf = this->pointerToArr_();
 		const number* otherBuf = other.pointerToArr_();
+
+		bool thisSign = this->sign;
+		bool otherSign = other.sign;	
+		bool isSame = (thisSign && otherSign) || (!thisSign && !otherSign); 
+		
+
 		if(otherSize >= thisCapacity)
 		{
-			this->reallocate(otherSize+1);
+			this->reallocate(otherSize + ((isSame)?(1):(0)));
 			thisBuf = this->pointerToArr_();
 		}
 		for(;thisSize < otherSize; thisSize++)
 		{
-			*(thisBuf + thisSize) = 0;
+			*(thisBuf + thisSize) = ((thisSign)?(BigNum::pow(N) - 1):(0) );
 		}
+
+		
+
 		bool sign = false;
 		for(number i = 0; i < thisSize; i++)
 		{
@@ -135,25 +209,44 @@ public:
 			}
 			*(thisBuf+i) = thisValue;
 		}
+		
+		
+		bool isOverflow = (thisSign && otherSign && !sign) ||
+				  (!thisSign && !otherSign && sign);
 
-		if(sign)
+		bool nowSign = (thisSign && (otherSign || !sign)) || (otherSign && !sign);
+		if(isOverflow)
 		{
-			*(thisBuf+thisSize) = 1;
+			*(thisBuf+thisSize) = (thisSign)?(BigNum::pow(N)-2):(1);
 			thisSize++;
 		}
 		this->counter_() = thisSize;
+		this->sign = nowSign;
+		
+		number g = (this->sign)?(BigNum::pow(N)-1):(0);
+		for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == g); i--)
+                {
+                        this->counter_()--;
+                }
 		return *this;
 		
 	}
 
-	bool operator >(const BigNum& other) const noexcept
+	int compare(const BigNum& other) const noexcept
 	{
+		bool thisSign = this->sign;
+		bool otherSign = other.sign;
+		if(!thisSign && otherSign)
+			return -1;
+		if(thisSign && !otherSign)
+			return 1;
+
 		number thisSize = this->size();
 		number otherSize = other.size();
 		if(thisSize > otherSize)
-			return true;
+			return -1;
 		else if(thisSize < otherSize)
-			return false;
+			return 1;
 
 		number* thisBuf = this->pointerToArr_();
 		number* otherBuf = other.pointerToArr_();
@@ -162,26 +255,33 @@ public:
 			number thisValue = *(thisBuf + (thisSize - 1) - i);
 			number otherValue = *(otherBuf + (otherSize - 1) -i);
 			if(thisValue > otherValue)
-				return true;
+				return -1;
 
 			else if (thisValue < otherValue)
-				return false;
+				return 1;
 		}
-		return false;
+		return 0;
 	}
+
+	bool operator >(const BigNum& other) const noexcept
+	{
+		return -1 == this->compare(other);
+	}
+
+
 	bool operator < (const BigNum& other) const noexcept
 	{
-		return other > (*this);
+		return this->compare(other) == 1;
 	}
 
 	bool operator !=(const BigNum& other) const noexcept
 	{
-		return ((*this) > other) && ((*this) < other);
+		return this->compare(other) != 0;
 	}
 
 	bool operator ==(const BigNum& other) const noexcept
 	{
-		return !((*this) != other);
+		return this->compare(other) == 0;
 	}
 
 	bool operator >=(const BigNum& other) const noexcept
@@ -193,10 +293,33 @@ public:
 		return (*this < other) || (*this == other); 
 	}
 	
+	void invert()
+	{
+		number* arr = this->pointerToArr_();
+		bool sign = this->sign;
+		if(*arr == 0 && this->size() == 0)
+		{
+			return;
+		}
+		if(!sign)
+			*this -= 1;
+	
 
+		for(std::size_t i = 0; i < this->size(); i++)
+		{	
+			number* ptr = (arr+i);
+			number value = *ptr;
+			*ptr = BigNum::pow(N) - 1 - value;
+			
+		}
+		if(sign)
+			*this += 1;
+		this->sign = !this->sign;
+	}
 
 	void debug()
 	{
+		std::cout << "sign: " << this->sign << ' ';
 		for(int i = 0; i < this->counter_(); i++)
 		{
 			std::cout << *(this->pointerToArr_()+i) << ' ';
@@ -217,21 +340,37 @@ public:
 
 	operator std::string()
 	{
-		std::string result(this->size()*N, '0');
+		short minus = ((this->sign)?(1):(0));
+		std::string result(this->size()*N + minus, '0');
+		
+		if(minus == 1)
+		{
+			result[0] = '-';
+			*this -= 1;
+		}
+
 		number size = this->size();
 		number* buf = this->pointerToArr_();
 		for(number i = 0; i < size; i++)
 		{
-			number num = *(buf + size - 1 - i); 
+			number num = *(buf + size - 1 - i);
+		       	if(minus == 1)
+			{
+				num = (BigNum::pow(N) - 1) - num;
+			}
 			number O = BigNum::pow(N - 1); 
 			for(int q = N-1; q >= 0 ; q-- )
 			{
 				number c = (num/O);
 				num-=c*O;
 				O/=10;
-				result.at(i*N + N-1 - q) = c + '0';
+				result[i*N + N-1 - q + minus] = c + '0';
 			}	
 			
+		}
+		if(minus == 1)
+		{
+			*this += 1;
 		}
 		return result;
 	}
@@ -274,6 +413,7 @@ private:
 private:
 	number* arr_;
 	std::size_t capacity_;
+	bool sign = false;
 };
 
 BigNum<> operator ""_BN(const char* str)
@@ -283,6 +423,9 @@ BigNum<> operator ""_BN(const char* str)
 
 int main()
 {
-	BigNum A = 99994242423131331394444424242424244_BN;
-	BigNum B = 14242424244242433424262476264672864_BN;
-	BigNum C = A - B;
+	BigNum A = 1111111111111111111111111111111111111111111111111111111111111111111111_BN;
+	BigNum B = 4444444444444444444444444444444444444444444444444444444444444444444444_BN;
+	BigNum C = A + B + 56789;
+	
+	std::cout << static_cast<std::string>(C) << std::endl;
+}
