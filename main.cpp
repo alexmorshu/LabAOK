@@ -1,4 +1,6 @@
 #include <iostream>
+#include <chrono>
+#include <random>
 #include <vector>
 #include <cstdint>
 #include <memory>
@@ -54,6 +56,7 @@ public:
 		number* newArr = new number[other.capacity_]; //allocate memomy
 		std::memcpy(newArr, other.arr_, other.capacity_ * sizeof(number)); //copy
 		this->arr_ = newArr; //set new arr
+		this->capacity_ = other.capacity_;
 		return *this;
 	}
 
@@ -67,7 +70,12 @@ public:
 	BigNum& operator-=(const BigNum& other)
 	{
 		if(*this < other)
+		{
+			this->debug();
+			other.debug();
+			std::cout.flush();
 			throw std::runtime_error("This object is less than other");
+		}
 		const number count = other.size();
 		const number thisCount = this->size(); 
 	 	number* thisBuf = this->pointerToArr_();
@@ -91,10 +99,7 @@ public:
 		{
 			*(thisBuf+count) -= 1;
 		}
-		for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == 0); i--)
-		{
-			this->counter_()--;
-		}
+		this->optimize();
 		return *this;
 	}
 
@@ -107,22 +112,16 @@ public:
 
 	BigNum& operator+=(const BigNum& other)
 	{
-		number thisSize = this->size();
                 number otherSize = other.size();
 		number thisCapacity = this->capacity_;
-		number* thisBuf = this->pointerToArr_();
 		const number* otherBuf = other.pointerToArr_();
-		if(otherSize >= thisCapacity)
-		{
-			this->reallocate(otherSize+1);
-			thisBuf = this->pointerToArr_();
-		}
-		for(;thisSize < otherSize; thisSize++)
-		{
-			*(thisBuf + thisSize) = 0;
-		}
+
+		this->resize(otherSize+1); 
+		number* thisBuf = this->pointerToArr_();
+		number thisSize = this->size();
+
 		bool sign = false;
-		for(number i = 0; i < thisSize; i++)
+		for(number i = 0; i < otherSize; i++)
 		{
 			number thisValue = *(thisBuf+i);
 			number otherValue = *(otherBuf+i);
@@ -145,15 +144,113 @@ public:
 		return *this;
 		
 	}
+	
+	BigNum operator*(const BigNum& other) const
+	{
+		number thisSize = this->size();
+		number otherSize = other.size();
+		number* thisBuf = this->pointerToArr_();
+		const number* otherBuf = other.pointerToArr_();
+		BigNum result(thisSize + otherSize + 2);
+		result.resize(thisSize + otherSize + 1);
+		number* resultBuf = result.pointerToArr_();
+	
+		
+		for(std::size_t i = 0; i < otherSize; i++)
+		{		
+			number otherValue = *(otherBuf + i);
+			number c = 0;
+			for(std::size_t j = 0; j < thisSize; j++)
+			{
+				number thisValue = *(thisBuf + j);
+				number resultValue = *(resultBuf + j + i);
+				std::uintmax_t mul = otherValue * thisValue +
+				       	c + resultValue;
+				*(resultBuf + j + i) = mul%(BigNum::pow(N));
+				c = mul/(BigNum::pow(N));
+			}
+			*(resultBuf + thisSize + i) = c;
+		}
 
-	bool operator >(const BigNum& other) const noexcept
+		result.optimize();
+		return result;
+
+	}
+	
+	BigNum& operator *=(const BigNum& other)
+	{
+		BigNum mul = (*this) * other;
+		(*this) = mul;
+		return *this;
+	}
+
+	
+	BigNum operator / (const BigNum& other)
+	{
+		number thisSize = this->size();
+		number otherSize = other.size();
+		number difSize = thisSize - otherSize;
+
+		BigNum down(difSize + 2);
+		number* downBuf = down.pointerToArr_();
+
+		BigNum up(difSize + 2);
+		up.resize(difSize);
+		number* upBuf = up.pointerToArr_();
+		*(upBuf + difSize - 1) = BigNum::pow(N)/2;
+		
+
+		BigNum sumUpDown(difSize + 2);
+		BigNum difUpDown(difSize + 2);
+		do{
+			sumUpDown.clear_();
+			sumUpDown += up;
+			sumUpDown += down;
+			sumUpDown.div2();
+
+
+			BigNum mul = sumUpDown * other;
+
+
+			difUpDown.clear_();
+			difUpDown += up;
+			difUpDown -= down;
+			difUpDown.div2();
+			
+
+			int compare = this->compare(mul);
+			if(compare == 1)
+			{
+				up -= difUpDown;			
+			}
+			else if(compare == -1)
+			{
+				down += difUpDown;
+			}
+			else 
+				break;
+
+
+		}while(!difUpDown.isZero());
+		sumUpDown.optimize();
+		return sumUpDown;
+	}
+
+	BigNum& operator/=(const BigNum& other)
+	{
+		BigNum num = *this / other;
+		*this = num;
+		return *this;
+	}
+
+	int compare(const BigNum& other) const noexcept
 	{
 		number thisSize = this->size();
 		number otherSize = other.size();
 		if(thisSize > otherSize)
-			return true;
+			return -1;
 		else if(thisSize < otherSize)
-			return false;
+			return 1;
 
 		number* thisBuf = this->pointerToArr_();
 		number* otherBuf = other.pointerToArr_();
@@ -162,45 +259,56 @@ public:
 			number thisValue = *(thisBuf + (thisSize - 1) - i);
 			number otherValue = *(otherBuf + (otherSize - 1) -i);
 			if(thisValue > otherValue)
-				return true;
+				return -1;
 
 			else if (thisValue < otherValue)
-				return false;
+				return 1;
 		}
-		return false;
+		return 0;
 	}
+
+	bool operator > (const BigNum& other)
+	{
+		return this->compare(other) == -1;
+	}
+
 	bool operator < (const BigNum& other) const noexcept
 	{
-		return other > (*this);
+		return this->compare(other) == 1;
 	}
 
 	bool operator !=(const BigNum& other) const noexcept
 	{
-		return ((*this) > other) && ((*this) < other);
+		return this->compare(other) != 0;
 	}
 
 	bool operator ==(const BigNum& other) const noexcept
 	{
-		return !((*this) != other);
+		return this->compare(other) == 0;
 	}
 
 	bool operator >=(const BigNum& other) const noexcept
 	{
-		return (*this > other) || (*this == other);
+		int compare = this->compare(other);
+		return (compare == -1) || (compare == 0);
 	}
 	bool operator <=(const BigNum& other) const noexcept
 	{
-		return (*this < other) || (*this == other); 
+		int compare = this->compare(other);
+		return (compare == 1) || (compare == 0); 
 	}
 	
 
 
-	void debug()
+	void debug() const 
 	{
+		std::cout << "capacity: " << this->capacity_
+			<< ' '  << "size: " << this->size() << " Num:";
 		for(int i = 0; i < this->counter_(); i++)
 		{
 			std::cout << *(this->pointerToArr_()+i) << ' ';
 		}
+		std::cout << '\n';
 	}
 
 	~BigNum()
@@ -217,9 +325,11 @@ public:
 
 	operator std::string()
 	{
-		std::string result(this->size()*N, '0');
+		
 		number size = this->size();
 		number* buf = this->pointerToArr_();
+
+		std::string result(this->size()*N, '0');
 		for(number i = 0; i < size; i++)
 		{
 			number num = *(buf + size - 1 - i); 
@@ -232,6 +342,7 @@ public:
 				result.at(i*N + N-1 - q) = c + '0';
 			}	
 			
+			
 		}
 		return result;
 	}
@@ -239,6 +350,11 @@ private:
 	BigNum(number* arr, std::size_t capacity): arr_(arr), capacity_(capacity)
 	{}
 	
+	void clear_()
+	{
+		this->counter_() = 1;
+		*(this->pointerToArr_()) = 0;
+	}
 
 	number& counter_() const noexcept
 	{
@@ -260,6 +376,30 @@ private:
 		this->capacity_ = size+1;
 	}
 	
+	void resize(std::size_t size)
+	{
+		number thisSize = this->size();
+		if(size > this->capacity_ - 1)
+		{
+			this->reallocate(size);
+		}
+		number* thisBuf = this->pointerToArr_();
+		for(;thisSize < size; thisSize++)
+		{
+			*(thisBuf + thisSize) = 0;
+		}
+		this->counter_() = thisSize;
+	}
+
+	void optimize() const noexcept
+	{
+		number* thisBuf = this->pointerToArr_();
+		for(number i = this->size()-1; i > 0 && (*(thisBuf+i) == 0); i--)
+		{
+			this->counter_()--;
+		}
+	}
+
 	static constexpr number pow(const number n)
 	{
 		number result = 1;
@@ -269,7 +409,27 @@ private:
 		}
 		return result;
 	}
+	
+	void div2()
+	{
+		number* buf = this->pointerToArr_();
+		number size = this->size();
+		number c = 0;
+		for(number i = size; i > 0; i--)
+		{
+			number value = *(buf + i - 1);
+			*(buf + i - 1) = value/2 + c * BigNum::pow(N)/2;
+			c = value%2;
+		}
+	}
+	
 
+	bool isZero()
+	{
+		return ((this->size() == 1) &&
+			(*(this->pointerToArr_()) == 0 ));
+	}
+	friend int main();
 	
 private:
 	number* arr_;
@@ -283,6 +443,8 @@ BigNum<> operator ""_BN(const char* str)
 
 int main()
 {
-	BigNum A = 99994242423131331394444424242424244_BN;
-	BigNum B = 14242424244242433424262476264672864_BN;
-	BigNum C = A - B;
+	BigNum a("10000");
+	BigNum b("10");
+	a /= b;
+	a.debug();
+}
