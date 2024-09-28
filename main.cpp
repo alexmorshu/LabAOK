@@ -114,11 +114,10 @@ public:
 	{
                 number otherSize = other.size();
 		number thisCapacity = this->capacity_;
-		const number* otherBuf = other.pointerToArr_();
-
 		this->resize(otherSize+1); 
 		number* thisBuf = this->pointerToArr_();
 		number thisSize = this->size();
+		const number* otherBuf = other.pointerToArr_();
 
 		bool sign = false;
 		for(number i = 0; i < otherSize; i++)
@@ -137,10 +136,11 @@ public:
 
 		if(sign)
 		{
-			*(thisBuf+thisSize) = 1;
+			*(thisBuf+otherSize) = 1;
 			thisSize++;
 		}
 		this->counter_() = thisSize;
+		this->optimize();
 		return *this;
 		
 	}
@@ -323,6 +323,32 @@ public:
 		return *(this->arr_);
 	}
 
+	BigNum mul(const BigNum& other)
+	{
+		BigNum a (*this);
+		BigNum b (other);
+		BigNum S(a.size() + b.size() + 1);
+		a.resize(a.size() + b.size() + 1);
+		BigNum one("1");
+		while(!b.isZero())
+		{
+			number valueB = *(b.pointerToArr_());
+			if((valueB%2) == 0)
+			{
+				a += a;
+				b.div2();
+			}
+			else
+			{
+				S+=a;
+				b-=one;
+			}
+		}
+
+		return S;
+
+	}
+
 	operator std::string()
 	{
 		
@@ -443,8 +469,28 @@ BigNum<> operator ""_BN(const char* str)
 
 int main()
 {
-	BigNum a("10000");
-	BigNum b("10");
-	a /= b;
-	a.debug();
+	std::mt19937_64 gen;
+	std::string numA(1000, '0');
+	std::string numB(1000, '0');
+	for(std::size_t i = 0; i < 1000; i++)
+	{
+		int ran = gen()%10;
+		numA[i] = ran+ '0';
+	       	ran = gen()%10;
+		numB[i] = ran + '0';	
+	}
+	BigNum a(numA);
+	BigNum b(numB);
+	auto t0 = std::chrono::steady_clock::now();
+	BigNum d = a.mul(b);
+	auto t1 = std::chrono::steady_clock::now();
+	BigNum f = a * b;
+	auto t2 = std::chrono::steady_clock::now();
+
+	std::chrono::duration<double, std::milli> mulD = (t1 - t0);
+	std::chrono::duration<double, std::milli> D = (t2 - t1);
+	std::cout << mulD.count() << std::endl;
+	std::cout << D.count() << std::endl;
+	
 }
+
