@@ -9,7 +9,7 @@
 template<std::size_t N = 4>
 class BigNum
 {
-	using number = std::uint16_t;
+	using number = std::uint32_t;
 public:
 	BigNum(const std::string& str): BigNum(new number[str.size()/N + 2]{}, str.size()/N + 2)
 	{
@@ -47,6 +47,17 @@ public:
 	BigNum(const BigNum& other) : BigNum(new number[other.capacity_], other.capacity_)
 	{
 		std::memcpy(this->arr_, other.arr_, other.capacity_*sizeof(number)); //copy
+	}
+
+	BigNum(const BigNum& other, std::size_t capacity) : BigNum(new number[capacity], capacity)
+	{
+		if(capacity < other.size())
+		{
+			std::cerr << capacity << '>' << other.size() << std::endl;
+			this->~BigNum();
+			throw std::runtime_error("capacity is too small to copy");
+		}
+		std::memcpy(this->arr_, other.arr_, other.size()*sizeof(number)); //copy
 	}
 
 	BigNum& operator=(const BigNum& other)
@@ -196,8 +207,22 @@ public:
 	}
 
 	
-	BigNum operator / (const BigNum& other)
+	BigNum operator / (const BigNum& other) const
 	{
+		if(other.isZero())
+		{
+			throw std::runtime_error("Divide by 0");
+		}
+		int cmp = this->compare(other);	
+		if(cmp == 1)
+		{
+			return BigNum();
+		}
+		else if (cmp == 0)
+		{
+			return BigNum("1");
+		}
+
 		number thisSize = this->size();
 		number otherSize = other.size();
 		number difSize = thisSize - otherSize;
@@ -278,7 +303,7 @@ public:
 		return 0;
 	}
 
-	bool operator > (const BigNum& other)
+	bool operator > (const BigNum& other) const noexcept
 	{
 		return this->compare(other) == -1;
 	}
@@ -336,10 +361,9 @@ public:
 
 	BigNum mul(const BigNum& other)
 	{
-		BigNum a (*this);
-		BigNum b (other);
-		BigNum S(a.size() + b.size() + 1);
-		a.resize(a.size() + b.size() + 1);
+		BigNum a (*this, this->size() + other.size() + 2);
+		BigNum b (other, this->size() + other.size() + 2);
+		BigNum S(a.size() + b.size() + 2);
 		BigNum one("1");
 		while(!b.isZero())
 		{
@@ -418,7 +442,10 @@ private:
 		number thisSize = this->size();
 		if(size > this->capacity_ - 1)
 		{
+			std::cout << "size " << size << "\ncapacity - 1: "
+				<< (this->capacity_ - 1) << '\n'; 
 			this->reallocate(size);
+			std::cout << "resize\n";
 		}
 		number* thisBuf = this->pointerToArr_();
 		for(;thisSize < size; thisSize++)
@@ -461,7 +488,7 @@ private:
 	}
 	
 
-	bool isZero()
+	bool isZero() const
 	{
 		return ((this->size() == 1) &&
 			(*(this->pointerToArr_()) == 0 ));
@@ -478,10 +505,30 @@ BigNum<> operator ""_BN(const char* str)
 	return BigNum(str);
 }	
 
+	
 int main()
 {
-	BigNum a("15000");
-	a+=a;
-	a.debug();
-}
+	std::uint64_t numbers;
+	std::cin >> numbers;
+	std::mt19937_64 gen;
+	std::string numA(numbers, '0');
+	std::string numB(numbers, '0');
+	for(std::size_t i = 0; i < numbers; i++)
+	{
+		int ran = gen()%10;
+		numA[i] = ran+ '0';
+	       	ran = gen()%10;
+		numB[i] = ran + '0';	
+	}
+	BigNum a(numA);
+	BigNum b(numB);
+	auto t0 = std::chrono::steady_clock::now();
+	//iBigNum d = a.mul(b);
+	auto t1 = std::chrono::steady_clock::now();
+	BigNum f = a * b;
+	auto t2 = std::chrono::steady_clock::now();
+	//std::chrono::duration<double, std::milli> mulD = (t1 - t0);
+	std::chrono::duration<double, std::milli> D = (t2 - t1);
+	std::cout << D.count() << std::endl;
 
+}
