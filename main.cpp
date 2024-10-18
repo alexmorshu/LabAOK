@@ -6,6 +6,111 @@
 #include <memory>
 #include <cstring>
 #include <exception>
+#include <complex>
+#include <cmath>
+#include <numbers>
+
+template<std::size_t>
+class BigNum;
+
+
+class ComplexVector
+{
+public:
+	ComplexVector(std::size_t size): ptr_(new std::complex<double>[size]{}), size_(size)
+	{}
+	
+	ComplexVector(const ComplexVector& other): ComplexVector(other.size_)
+	{
+		std::memcpy(this->ptr_.get(), other.ptr_.get(),
+			       	sizeof(std::complex<double>) * this->size_);
+	}
+
+	std::complex<double>& get(std::size_t index) noexcept
+	{
+		return *(ptr_.get() + index);
+	}
+
+	const std::complex<double>& get(std::size_t index) const noexcept 
+	{
+		return *(ptr_.get() + index);
+	}
+
+
+	std::size_t size() const noexcept
+	{
+		return this->size_;
+	}
+
+	ComplexVector& operator *= (const ComplexVector& other)
+	{
+		if(this->size() != other.size())
+			throw std::runtime_error("this size != other size");
+
+		for(std::size_t i = 0; i < this->size(); i++)
+		{
+			*(this->ptr_.get() + i) *= (*(other.ptr_.get()+i));
+		}
+		return *this;
+	}
+
+	ComplexVector operator *(const ComplexVector& other)
+	{
+		ComplexVector v(*this);
+		v *= other;
+		return v;
+	}
+
+	template<std::size_t n>
+	BigNum<n> DFT()
+	{
+		BigNum<n> v(this->size() + 1);
+		v.resize(this->size());
+		for(std::size_t i = 0; i < this->size(); i++)
+		{
+			std::complex<double> e = 
+				 std::exp(-2 * std::numbers::pi_v<double> * i / this->size() * std::complex<double>(0, 1));
+			std::complex<double> eNow = e;
+			double jq = this->get(0).real();
+			for(std::size_t j = 1; j < this->size(); j++)
+			{
+				jq += (eNow * this->get(j)).real();
+			      	eNow*=e;
+			}
+			jq /= this->size();
+			v.get(i) = std::round(jq);
+
+		}
+		return v;
+	}
+
+
+private:
+	
+	void resize_(std::size_t size)
+	{
+		bool needResize = (this->size_ < size);
+
+		if(needResize)
+		{
+			std::complex<double>* ptr = ptr_.get();
+			ptr_ = std::move(
+					std::unique_ptr<std::complex<double>[]>(
+							new std::complex<double>[size]{}
+									       )
+					);
+			std::memcpy(ptr_.get(), ptr, this->size_);
+			this->size_ = size;
+		}
+	}
+
+
+private:
+	std::unique_ptr<std::complex<double>[]> ptr_;
+	std::size_t size_;
+
+};
+
 template<std::size_t N = 4>
 class BigNum
 {
@@ -124,9 +229,9 @@ public:
 	BigNum& operator+=(const BigNum& other)
 	{
                 number otherSize = other.size();
-		if(otherSize >= this->size())
-			this->resize(otherSize+1); 
-		number thisCapacity = this->capacity_;
+		number max = std::max(otherSize,this->size());
+		this->resize(max+1); 
+
 		number* thisBuf = this->pointerToArr_();
 		number thisSize = this->size();
 		const number* otherBuf = other.pointerToArr_();
@@ -146,7 +251,7 @@ public:
 			}
 			*(thisBuf+i) = thisValue;
 		}
-		for(; i < (thisSize - 1) && sign; i++)
+		for(; i < thisSize && sign; i++)
 		{
 			number thisValue = *(thisBuf+i);
 			thisValue+=1;
@@ -157,10 +262,7 @@ public:
 			}
 			*(thisBuf+i) = thisValue;
 		}
-		if(sign)
-		{
-			*(thisBuf+i) = 1;
-		}
+
 		this->counter_() = thisSize;
 		this->optimize();
 		return *this;
@@ -173,8 +275,8 @@ public:
 		number otherSize = other.size();
 		number* thisBuf = this->pointerToArr_();
 		const number* otherBuf = other.pointerToArr_();
-		BigNum result(thisSize + otherSize + 2);
-		result.resize(thisSize + otherSize + 1);
+		BigNum result(thisSize + otherSize + 1);
+		result.resize(thisSize + otherSize);
 		number* resultBuf = result.pointerToArr_();
 	
 		
@@ -225,19 +327,17 @@ public:
 
 		number thisSize = this->size();
 		number otherSize = other.size();
-		number difSize = thisSize - otherSize;
-
+		number difSize = thisSize - otherSize + 1;
 		BigNum down(difSize + 2);
 		number* downBuf = down.pointerToArr_();
-
 		BigNum up(difSize + 2);
-		up.resize(difSize);
-		number* upBuf = up.pointerToArr_();
-		*(upBuf + difSize - 1) = BigNum::pow(N)/2;
-		
 
-		BigNum sumUpDown(difSize + 2);
-		BigNum difUpDown(difSize + 2);
+		up.resize(difSize + 1);
+		number* upBuf = up.pointerToArr_();
+		*(upBuf + difSize) = BigNum::pow(N)/2;
+
+		BigNum sumUpDown(difSize + 3);
+		BigNum difUpDown(difSize + 3);
 		do{
 			sumUpDown.clear_();
 			sumUpDown += up;
@@ -334,7 +434,11 @@ public:
 		return (compare == 1) || (compare == 0); 
 	}
 	
-
+	number& get(number index)
+	{
+		number* arr = this->pointerToArr_();
+		return *(arr+index);
+	}
 
 	void debug() const 
 	{
@@ -407,6 +511,27 @@ public:
 		}
 		return result;
 	}
+
+	static ComplexVector DFT(const BigNum& num)
+	{
+		ComplexVector v(num.size());
+		const number* arr = num.pointerToArr_();
+		for(std::size_t i = 0; i < num.size(); i++)
+		{
+			std::complex<double> e = 
+				 std::exp(2 * std::numbers::pi_v<double> * i / num.size() * std::complex<double>(0, 1));
+			std::complex<double> eNow = e;
+			v.get(i) = *(arr);
+			for(std::size_t j = 1; j < num.size(); j++)
+			{
+				v.get(i) += (eNow * std::complex<double>(*(arr + j)));
+			      	eNow*=e;
+			}
+
+		}	
+		return v;
+	}
+
 private:
 	BigNum(number* arr, std::size_t capacity): arr_(arr), capacity_(capacity)
 	{}
@@ -494,7 +619,7 @@ private:
 			(*(this->pointerToArr_()) == 0 ));
 	}
 	friend int main();
-	
+	friend class ComplexVector;	
 private:
 	number* arr_;
 	std::size_t capacity_;
@@ -505,30 +630,27 @@ BigNum<> operator ""_BN(const char* str)
 	return BigNum(str);
 }	
 
-	
+
+
+
+
+
+
 int main()
 {
-	std::uint64_t numbers;
-	std::cin >> numbers;
-	std::mt19937_64 gen;
-	std::string numA(numbers, '0');
-	std::string numB(numbers, '0');
-	for(std::size_t i = 0; i < numbers; i++)
+	BigNum<1> y ("4532");	
+	ComplexVector c = BigNum<1>::DFT(y);
+	ComplexVector g = c;
+	c *= g;
+	for(std::size_t i = 0; i < 4; i++)
 	{
-		int ran = gen()%10;
-		numA[i] = ran+ '0';
-	       	ran = gen()%10;
-		numB[i] = ran + '0';	
+		std::cout << c.get(i) << ' ';
 	}
-	BigNum a(numA);
-	BigNum b(numB);
-	auto t0 = std::chrono::steady_clock::now();
-	//iBigNum d = a.mul(b);
-	auto t1 = std::chrono::steady_clock::now();
-	BigNum f = a * b;
-	auto t2 = std::chrono::steady_clock::now();
-	//std::chrono::duration<double, std::milli> mulD = (t1 - t0);
-	std::chrono::duration<double, std::milli> D = (t2 - t1);
-	std::cout << D.count() << std::endl;
+	
+	BigNum<4> h = c.DFT<4>();
+	h.counter_() = 4;
+	y.debug();
+	h.debug();
 
+	std::cout << std::endl;
 }
