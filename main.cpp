@@ -116,7 +116,7 @@ class BigNum
 {
 	using number = std::uint32_t;
 public:
-	BigNum(const std::string& str): BigNum(new number[str.size()/N + 2]{}, str.size()/N + 2)
+	BigNum(const std::string& str): BigNum(new number[(str.size())/N + 2]{}, str.size()/N + 2)
 	{
 		number* buf = this->pointerToArr_();
 		std::size_t position = 0;
@@ -158,7 +158,6 @@ public:
 	{
 		if(capacity < other.size())
 		{
-			std::cerr << capacity << '>' << other.size() << std::endl;
 			this->~BigNum();
 			throw std::runtime_error("capacity is too small to copy");
 		}
@@ -187,9 +186,6 @@ public:
 	{
 		if(*this < other)
 		{
-			this->debug();
-			other.debug();
-			std::cout.flush();
 			throw std::runtime_error("This object is less than other");
 		}
 		const number count = other.size();
@@ -218,6 +214,7 @@ public:
 		this->optimize();
 		return *this;
 	}
+
 
 	BigNum operator+(const BigNum& other) const
 	{
@@ -268,6 +265,7 @@ public:
 		return *this;
 		
 	}
+
 	
 	BigNum operator*(const BigNum& other) const
 	{
@@ -308,6 +306,29 @@ public:
 		return *this;
 	}
 
+	BigNum& operator /= (std::uintmax_t num)
+	{
+		if(num == 0)
+			throw std::runtime_error("Divide by 0");
+		std::uintmax_t carry = 0;
+		number* arr = this->pointerToArr_();
+		number O = BigNum::pow(N);
+		for(int i = this->size(); i > 0; i--)
+		{
+			std::uintmax_t v = (*(arr+i-1)) + carry;
+			*(arr + i - 1) = static_cast<number>(v/num);
+			carry = (v%num) * O;
+		}
+		this->optimize();
+		return *this;
+	}
+
+	BigNum operator /(std::uintmax_t num)
+	{
+		BigNum newNum(*this);
+		newNum /= num;
+		return newNum;
+	}
 	
 	BigNum operator / (const BigNum& other) const
 	{
@@ -331,27 +352,23 @@ public:
 		BigNum down(difSize + 2);
 		number* downBuf = down.pointerToArr_();
 		BigNum up(difSize + 2);
-
 		up.resize(difSize + 1);
 		number* upBuf = up.pointerToArr_();
-		*(upBuf + difSize) = BigNum::pow(N)/2;
-
+		*(upBuf + difSize) = BigNum::pow(N)/2; 
 		BigNum sumUpDown(difSize + 3);
 		BigNum difUpDown(difSize + 3);
 		do{
 			sumUpDown.clear_();
 			sumUpDown += up;
 			sumUpDown += down;
-			sumUpDown.div2();
-
+			sumUpDown /= 2;
 
 			BigNum mul = sumUpDown * other;
-
 
 			difUpDown.clear_();
 			difUpDown += up;
 			difUpDown -= down;
-			difUpDown.div2();
+			difUpDown /= 2;
 			
 
 			int compare = this->compare(mul);
@@ -638,19 +655,8 @@ BigNum<> operator ""_BN(const char* str)
 
 int main()
 {
-	BigNum<1> y ("4532");	
-	ComplexVector c = BigNum<1>::DFT(y);
-	ComplexVector g = c;
-	c *= g;
-	for(std::size_t i = 0; i < 4; i++)
-	{
-		std::cout << c.get(i) << ' ';
-	}
-	
-	BigNum<4> h = c.DFT<4>();
-	h.counter_() = 4;
-	y.debug();
-	h.debug();
-
-	std::cout << std::endl;
+	BigNum<4> y ("7567452345");	
+	BigNum<4> z ("15452");	
+	BigNum<4> d = y/z;
+	std::cout << static_cast<std::string>(d) << std::endl;
 }
