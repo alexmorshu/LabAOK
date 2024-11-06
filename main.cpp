@@ -114,9 +114,9 @@ private:
 template<std::size_t N = 4>
 class BigNum
 {
-	using number = std::uint32_t;
+	using number = std::uint16_t;
 public:
-	BigNum(const std::string& str): BigNum(new number[(str.size())/N + 2]{}, str.size()/N + 2)
+	BigNum(const std::string& str): BigNum(new number[(str.size()+N-1)/N + 1]{}, (str.size()+N-1)/N + 1)
 	{
 		number* buf = this->pointerToArr_();
 		std::size_t position = 0;
@@ -161,7 +161,7 @@ public:
 			this->~BigNum();
 			throw std::runtime_error("capacity is too small to copy");
 		}
-		std::memcpy(this->arr_, other.arr_, other.size()*sizeof(number)); //copy
+		std::memcpy(this->arr_, other.arr_, other.capacity_*sizeof(number)); //copy
 	}
 
 	BigNum& operator=(const BigNum& other)
@@ -225,10 +225,10 @@ public:
 
 	BigNum& operator+=(const BigNum& other)
 	{
-                number otherSize = other.size();
-		number max = std::max(otherSize,this->size());
+		number otherSize = other.size();
+		number max = std::max(other.size(),this->size());
 		this->resize(max+1); 
-
+		
 		number* thisBuf = this->pointerToArr_();
 		number thisSize = this->size();
 		const number* otherBuf = other.pointerToArr_();
@@ -492,7 +492,7 @@ public:
 			if((valueB%2) == 0)
 			{
 				a += a;
-				b.div2();
+				b/=2;
 			}
 			else
 			{
@@ -584,10 +584,7 @@ private:
 		number thisSize = this->size();
 		if(size > this->capacity_ - 1)
 		{
-			std::cout << "size " << size << "\ncapacity - 1: "
-				<< (this->capacity_ - 1) << '\n'; 
 			this->reallocate(size);
-			std::cout << "resize\n";
 		}
 		number* thisBuf = this->pointerToArr_();
 		for(;thisSize < size; thisSize++)
@@ -635,8 +632,8 @@ private:
 		return ((this->size() == 1) &&
 			(*(this->pointerToArr_()) == 0 ));
 	}
-	friend int main();
 	friend class ComplexVector;	
+	int main();
 private:
 	number* arr_;
 	std::size_t capacity_;
@@ -652,11 +649,34 @@ BigNum<> operator ""_BN(const char* str)
 
 
 
-
-int main()
+int times(int argc, char* argv[])
 {
-	BigNum<4> y ("7567452345");	
-	BigNum<4> z ("15452");	
-	BigNum<4> d = y/z;
-	std::cout << static_cast<std::string>(d) << std::endl;
+	if(argc != 2)
+		return -1;
+	char* str = argv[1];
+	std::uint16_t num = std::atoi(str);
+	std::mt19937_64 gen;
+	std::string numA(num, '0');
+	std::string numB(num, '0');
+	for(std::uint16_t i = 0; i < num; i++)
+	{
+		int ran = gen()%10;
+		numA[i] = ran + '0';
+		ran = gen()%10;
+		numB[i] = ran + '0';
+	}
+	BigNum<4> a(numA);
+	BigNum<4> b(numA);
+
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	BigNum g = a.mul(b);
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	std::chrono::duration<std::uint64_t, std::nano> d = (end - begin);
+	std::cout << d.count();
+	return 0;
+}
+
+int main(int argc, char* argv[])
+{
+	return times(argc, argv);
 }
